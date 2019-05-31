@@ -1,12 +1,18 @@
 package com.liangtg.fullscreenbrowser;
 
+import android.app.PendingIntent;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.drawable.LayerDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.support.v4.app.NotificationCompat;
+import android.support.v4.app.NotificationManagerCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.Toolbar;
 import android.text.TextUtils;
@@ -26,9 +32,11 @@ import java.util.Iterator;
 import java.util.Set;
 
 public class MainActivity extends AppCompatActivity {
+    private static final String TOOLBAR_ACTION = BuildConfig.APPLICATION_ID + ".TOOLBAR_ACTION";
     private static final String TAG = "web";
     private final String HOME_URL = "http://m.baidu.com/error.jsp";
     private ViewHolder viewHolder;
+    private ToolbarReceiver toolbarReceiver = new ToolbarReceiver();
 
     private static void d(Object object) {
         Log.d(TAG, String.valueOf(object));
@@ -114,13 +122,39 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void createShotcut() {
-        Intent intent = new Intent(Intent.ACTION_CREATE_SHORTCUT);
+        Intent intent = new Intent("com.android.launcher.action.INSTALL_SHORTCUT");
         Intent target = new Intent(this, MainActivity.class);
         target.setData(Uri.parse(viewHolder.webView.getUrl()));
+        intent.putExtra("duplicate", false);
         intent.putExtra(Intent.EXTRA_SHORTCUT_NAME, viewHolder.webView.getTitle());
         intent.putExtra(Intent.EXTRA_SHORTCUT_ICON, viewHolder.webView.getFavicon());
         intent.putExtra(Intent.EXTRA_SHORTCUT_INTENT, target);
-        startActivity(intent);
+        sendBroadcast(intent);
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, "app");
+        builder.setAutoCancel(false);
+        builder.setContentIntent(
+            PendingIntent.getBroadcast(this, 0, new Intent(TOOLBAR_ACTION),
+                PendingIntent.FLAG_UPDATE_CURRENT));
+        builder.setContentText("open toolbar");
+        builder.setSmallIcon(R.drawable.ic_toolbar);
+        NotificationManagerCompat.from(this).notify(10, builder.build());
+        registerReceiver(toolbarReceiver, new IntentFilter(TOOLBAR_ACTION));
+    }
+
+    @Override protected void onPause() {
+        super.onPause();
+        NotificationManagerCompat.from(this).cancel(10);
+        unregisterReceiver(toolbarReceiver);
+    }
+
+    private class ToolbarReceiver extends BroadcastReceiver {
+        @Override public void onReceive(Context context, Intent intent) {
+            viewHolder.showToolbar();
+        }
     }
 
     private class ViewHolder implements View.OnClickListener, View.OnTouchListener,
