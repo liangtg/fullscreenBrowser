@@ -1,5 +1,7 @@
 package com.liangtg.fullscreenbrowser;
 
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -28,6 +30,7 @@ import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+
 import java.util.Iterator;
 import java.util.Set;
 
@@ -42,17 +45,37 @@ public class MainActivity extends AppCompatActivity {
         Log.d(TAG, String.valueOf(object));
     }
 
+    public static String createNotificationChannel(Context context) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            String channelId = BuildConfig.APPLICATION_ID;
+            CharSequence channelName = "首页";
+            String channelDescription = "通知栏操作";
+            int channelImportance = NotificationManager.IMPORTANCE_DEFAULT;
+
+            NotificationChannel notificationChannel = new NotificationChannel(channelId, channelName, channelImportance);
+            notificationChannel.setDescription(channelDescription);
+            notificationChannel.enableVibration(false);
+            notificationChannel.setLockscreenVisibility(NotificationCompat.VISIBILITY_PRIVATE);
+            NotificationManager notificationManager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+            notificationManager.createNotificationChannel(notificationChannel);
+            return channelId;
+        } else {
+            return null;
+        }
+    }
+
     @Override
-    protected void onCreate(Bundle savedInstanceState) {
+    protected void onCreate(final Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         fullscreen();
         setContentView(R.layout.activity_main);
         viewHolder = new ViewHolder();
         initWebSettings();
         getWindow().getDecorView().postOnAnimation(new Runnable() {
-            @Override public void run() {
+            @Override
+            public void run() {
                 if (isFinishing()) return;
-                loadUrl();
+                loadUrl(null == savedInstanceState);
                 //viewHolder.hideToolbar();
             }
         });
@@ -62,8 +85,7 @@ public class MainActivity extends AppCompatActivity {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             Window window = getWindow();
             window.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS);
-            window.getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
+            window.getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
             window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
             window.setStatusBarColor(Color.TRANSPARENT);
         }
@@ -89,12 +111,12 @@ public class MainActivity extends AppCompatActivity {
         return statusBarHeight1;
     }
 
-    private void loadUrl() {
+    private void loadUrl(boolean showHomeIfEmpty) {
         String url = getIntent().getDataString();
         if (TextUtils.isEmpty(url)) url = getIntent().getStringExtra(Intent.EXTRA_TEXT);
         if (!TextUtils.isEmpty(url) && url.startsWith("http")) {
             viewHolder.webView.loadUrl(url);
-        } else {
+        } else if (showHomeIfEmpty) {
             viewHolder.webView.loadUrl(HOME_URL);
         }
         d(getIntent().toString());
@@ -107,7 +129,8 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    @Override public void onBackPressed() {
+    @Override
+    public void onBackPressed() {
         if (viewHolder.webView.canGoBack()) {
             viewHolder.webView.goBack();
         } else {
@@ -115,10 +138,23 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    @Override protected void onNewIntent(Intent intent) {
+    @Override
+    protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
-        loadUrl();
+        loadUrl(false);
+    }
+
+    @Override
+    protected void onSaveInstanceState(Bundle outState) {
+        super.onSaveInstanceState(outState);
+        viewHolder.webView.saveState(outState);
+    }
+
+    @Override
+    protected void onRestoreInstanceState(Bundle savedInstanceState) {
+        super.onRestoreInstanceState(savedInstanceState);
+        viewHolder.webView.restoreState(savedInstanceState);
     }
 
     private void createShotcut() {
@@ -132,33 +168,33 @@ public class MainActivity extends AppCompatActivity {
         sendBroadcast(intent);
     }
 
-    @Override protected void onResume() {
+    @Override
+    protected void onResume() {
         super.onResume();
-        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, "app");
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, createNotificationChannel(this));
         builder.setAutoCancel(false);
-        builder.setContentIntent(
-            PendingIntent.getBroadcast(this, 0, new Intent(TOOLBAR_ACTION),
-                PendingIntent.FLAG_UPDATE_CURRENT));
+        builder.setContentIntent(PendingIntent.getBroadcast(this, 0, new Intent(TOOLBAR_ACTION), PendingIntent.FLAG_UPDATE_CURRENT));
         builder.setContentText("open toolbar");
         builder.setSmallIcon(R.drawable.ic_toolbar);
         NotificationManagerCompat.from(this).notify(10, builder.build());
         registerReceiver(toolbarReceiver, new IntentFilter(TOOLBAR_ACTION));
     }
 
-    @Override protected void onPause() {
+    @Override
+    protected void onPause() {
         super.onPause();
         NotificationManagerCompat.from(this).cancel(10);
         unregisterReceiver(toolbarReceiver);
     }
 
     private class ToolbarReceiver extends BroadcastReceiver {
-        @Override public void onReceive(Context context, Intent intent) {
+        @Override
+        public void onReceive(Context context, Intent intent) {
             viewHolder.showToolbar();
         }
     }
 
-    private class ViewHolder implements View.OnClickListener, View.OnTouchListener,
-        Toolbar.OnMenuItemClickListener {
+    private class ViewHolder implements View.OnClickListener, View.OnTouchListener, Toolbar.OnMenuItemClickListener {
         private WebView webView;
         private View progressBar;
         private Toolbar toolbar;
@@ -177,15 +213,18 @@ public class MainActivity extends AppCompatActivity {
             progressBar.setOnClickListener(this);
             progressDrawable = (LayerDrawable) progressBar.getBackground();
             webView.setWebChromeClient(new WebChromeClient() {
-                @Override public void onProgressChanged(WebView view, int newProgress) {
+                @Override
+                public void onProgressChanged(WebView view, int newProgress) {
                     progressDrawable.getDrawable(1).setLevel(newProgress * 100);
                 }
             });
             webView.setWebViewClient(new WebViewClient() {
-                @Override public void onPageFinished(WebView view, String url) {
+                @Override
+                public void onPageFinished(WebView view, String url) {
                 }
 
-                @Override public void onPageStarted(WebView view, String url, Bitmap favicon) {
+                @Override
+                public void onPageStarted(WebView view, String url, Bitmap favicon) {
                     //d("start: " + url);
                 }
 
@@ -206,25 +245,27 @@ public class MainActivity extends AppCompatActivity {
         }
 
         private void hideToolbar() {
-            toolbar.startAnimation(
-                AnimationUtils.loadAnimation(MainActivity.this, R.anim.hide_bottom_top));
+            toolbar.startAnimation(AnimationUtils.loadAnimation(MainActivity.this, R.anim.hide_bottom_top));
             toolbar.setVisibility(View.GONE);
             toolbarTouch.setVisibility(View.GONE);
         }
 
-        @Override public void onClick(View v) {
+        @Override
+        public void onClick(View v) {
             int id = v.getId();
             if (R.id.progress_horizontal == id) {
                 showToolbar();
             }
         }
 
-        @Override public boolean onTouch(View v, MotionEvent event) {
+        @Override
+        public boolean onTouch(View v, MotionEvent event) {
             hideToolbar();
             return false;
         }
 
-        @Override public boolean onMenuItemClick(MenuItem menuItem) {
+        @Override
+        public boolean onMenuItemClick(MenuItem menuItem) {
             hideToolbar();
             int id = menuItem.getItemId();
             if (R.id.mn_home == id) {
